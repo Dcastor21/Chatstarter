@@ -1,16 +1,16 @@
-"use client";
-
 import { useMutation, useQuery } from "convex/react";
-import { use, useRef, useState } from "react";
-import { api } from "../../../../../convex/_generated/api";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Id } from "../../convex/_generated/dataModel";
+import { api } from "../../convex/_generated/api";
+import { ScrollArea } from "./ui/scroll-area";
+import { FunctionReturnType } from "convex/server";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import Image from "next/image";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "./ui/dropdown-menu";
 import {
   LoaderIcon,
   MoreVerticalIcon,
@@ -18,57 +18,31 @@ import {
   SendIcon,
   TrashIcon,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Doc, Id } from "../../../../../convex/_generated/dataModel";
-import { FunctionReturnType } from "convex/server";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
-import Image from "next/image";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { useImageUpload } from "@/hooks/use-image-upload";
 
-export default function MessagePage({
-  params,
-}: {
-  params: Promise<{ id: Id<"directMessages"> }>;
-}) {
-  const { id } = use(params);
-
-  const directMessage = useQuery(api.functions.dm.get, {
-    id,
-  });
+export function Messages({ id }: { id: Id<"directMessages" | "channels"> }) {
   const messages = useQuery(api.functions.message.list, {
-    directMessage: id,
+    dmOrChannelId: id,
   });
-
-  if (!directMessage) {
-    return null;
-  }
-
   return (
-    <div className="flex flex-1 flex-col divide-y max-h-screen">
-      <header className="flex items-center gap-2 p-4">
-        <Avatar className="size-8 border">
-          <AvatarImage src={directMessage.user.image} />
-          <AvatarFallback />
-        </Avatar>
-        <h1 className="font-semibold">{directMessage.user.username}</h1>
-      </header>
+    <>
       <ScrollArea className="h-full py-4">
         {messages?.map((message) => (
           <MessageItem key={message._id} message={message} />
         ))}
       </ScrollArea>
-      <TypingIndicator directMessage={id} />
-      <MessageInput directMessage={id} />
-    </div>
+      <TypingIndicator id={id} />
+      <MessageInput id={id} />
+    </>
   );
 }
 
-function TypingIndicator({
-  directMessage,
-}: {
-  directMessage: Id<"directMessages">;
-}) {
-  const usernames = useQuery(api.functions.typing.list, { directMessage });
+function TypingIndicator({ id }: { id: Id<"directMessages" | "channels"> }) {
+  const usernames = useQuery(api.functions.typing.list, { dmOrChannelId: id });
 
   if (!usernames || usernames.length === 0) {
     return null;
@@ -137,44 +111,22 @@ function MessageActions({ message }: { message: Message }) {
   );
 }
 
-function MessageInput({
-  directMessage,
-}: {
-  directMessage: Id<"directMessages">;
-}) {
+function MessageInput({ id }: { id: Id<"directMessages" | "channels"> }) {
   const [content, setContent] = useState("");
   const sendMessage = useMutation(api.functions.message.create);
   const sendTypingIndicator = useMutation(api.functions.typing.upsert);
-  const generateUploadUrl = useMutation(
-    api.functions.message.generateUploadUrl
-  );
-  const [attachment, setAttachment] = useState<Id<"_storage">>();
-  const [file, setFile] = useState<File>();
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFile(file);
-    setIsUploading(true);
-    const url = await generateUploadUrl();
-    const res = await fetch(url, {
-      method: "POST",
-      body: file,
-    });
-    const { storageId } = (await res.json()) as { storageId: Id<"_storage"> };
-    setAttachment(storageId);
-    setIsUploading(false);
-  };
+  const imageUpload = useImageUpload();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      await sendMessage({ directMessage, attachment, content });
+      await sendMessage({
+        dmOrChannelId: id,
+        attachment: imageUpload.storageId,
+        content,
+      });
       setContent("");
-      setAttachment(undefined);
-      setFile(undefined);
+      imageUpload.reset();
     } catch (error) {
       toast.error("Failed to send message", {
         description:
@@ -190,21 +142,26 @@ function MessageInput({
           type="button"
           size="icon"
           onClick={() => {
-            fileInputRef.current?.click();
+            imageUpload.open();
           }}
         >
           <PlusIcon />
           <span className="sr-only">Attach</span>
         </Button>
         <div className="flex flex-col flex-1 gap-2">
-          {file && <ImagePreview file={file} isUploading={isUploading} />}
+          {imageUpload.previewUrl && (
+            <ImagePreview
+              url={imageUpload.previewUrl}
+              isUploading={imageUpload.isUploading}
+            />
+          )}
           <Input
             placeholder="Message"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            onKeyDown={(e) => {
+            onKeyDown={() => {
               if (content.length > 0) {
-                sendTypingIndicator({ directMessage });
+                sendTypingIndicator({ dmOrChannelId: id });
               }
             }}
           />
@@ -214,31 +171,21 @@ function MessageInput({
           <span className="sr-only">Send</span>
         </Button>
       </form>
-      <input
-        type="file"
-        className="hidden"
-        ref={fileInputRef}
-        onChange={handleImageUpload}
-      />
+      <input {...imageUpload.inputProps} />
     </>
   );
 }
 
 function ImagePreview({
-  file,
+  url,
   isUploading,
 }: {
-  file: File;
+  url: string;
   isUploading: boolean;
 }) {
   return (
     <div className="relative size-40 overflow-hidden rounded border">
-      <Image
-        src={URL.createObjectURL(file)}
-        alt="Attachment"
-        width={300}
-        height={300}
-      />
+      <Image src={url} alt="Attachment" width={300} height={300} />
       {isUploading && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/50">
           <LoaderIcon className="animate-spin size-8" />
