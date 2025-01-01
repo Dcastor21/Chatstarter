@@ -1,21 +1,26 @@
+//import { mutation, query } from "../_generated/server";
 import { v } from "convex/values";
+import { authenticatedMutation, authenticatedQuery } from "./helpers";
 import { internal } from "../_generated/api";
-import {
-  assertMember,
-  authenticatedMutation,
-  authenticatedQuery,
-} from "./helpers";
 
 export const list = authenticatedQuery({
   args: {
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
   },
-  handler: async (ctx, { dmOrChannelId }) => {
-    await assertMember(ctx, dmOrChannelId);
+  handler: async (ctx, { directMessage }) => {
+    const member = await ctx.db
+      .query("directMessageMembers")
+      .withIndex("by_direct_message_user", (q) =>
+        q.eq("directMessage", directMessage).eq("user", ctx.user._id)
+      )
+      .first();
+    if (!member) {
+      throw new Error("You are not a member of this direct message.");
+    }
     const messages = await ctx.db
       .query("messages")
-      .withIndex("by_dmOrChannelId", (q) =>
-        q.eq("dmOrChannelId", dmOrChannelId)
+      .withIndex("by_direct_message", (q) =>
+        q.eq("directMessage", directMessage)
       )
       .collect();
     return await Promise.all(
@@ -38,18 +43,26 @@ export const create = authenticatedMutation({
   args: {
     content: v.string(),
     attachment: v.optional(v.id("_storage")),
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
   },
-  handler: async (ctx, { content, attachment, dmOrChannelId }) => {
-    await assertMember(ctx, dmOrChannelId);
+  handler: async (ctx, { content, attachment, directMessage }) => {
+    const member = await ctx.db
+      .query("directMessageMembers")
+      .withIndex("by_direct_message_user", (q) =>
+        q.eq("directMessage", directMessage).eq("user", ctx.user._id)
+      )
+      .first();
+    if (!member) {
+      throw new Error("You are not a member of this direct message.");
+    }
     await ctx.db.insert("messages", {
       content,
       attachment,
-      dmOrChannelId,
+      directMessage,
       sender: ctx.user._id,
     });
     await ctx.scheduler.runAfter(0, internal.functions.typing.remove, {
-      dmOrChannelId,
+      directMessage,
       user: ctx.user._id,
     });
   },
@@ -70,5 +83,11 @@ export const remove = authenticatedMutation({
     if (message.attachment) {
       await ctx.storage.delete(message.attachment);
     }
+  },
+});
+
+export const generateUploadUrl = authenticatedMutation({
+  handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
   },
 });

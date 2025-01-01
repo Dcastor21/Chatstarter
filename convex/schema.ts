@@ -28,42 +28,17 @@ export default defineSchema({
     .index("by_direct_message", ["directMessage"])
     .index("by_direct_message_user", ["directMessage", "user"])
     .index("by_user", ["user"]),
-
-  servers: defineTable({
-    name: v.string(),
-    ownerId: v.id("users"),
-    iconId: v.optional(v.id("_storage")),
-    defaultChannelId: v.optional(v.id("channels")),
-  }),
-  channels: defineTable({
-    name: v.string(),
-    serverId: v.id("servers"),
-  }).index("by_serverId", ["serverId"]),
-  serverMembers: defineTable({
-    serverId: v.id("servers"),
-    userId: v.id("users"),
-  })
-    .index("by_serverId", ["serverId"])
-    .index("by_userId", ["userId"])
-    .index("by_serverId_userId", ["serverId", "userId"]),
-  invites: defineTable({
-    serverId: v.id("servers"),
-    expiresAt: v.optional(v.number()),
-    maxUses: v.optional(v.number()),
-    uses: v.number(),
-  }),
-
   messages: defineTable({
     sender: v.id("users"),
     content: v.string(),
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
     attachment: v.optional(v.id("_storage")),
-  }).index("by_dmOrChannelId", ["dmOrChannelId"]),
+  }).index("by_direct_message", ["directMessage"]),
   typingIndicators: defineTable({
     user: v.id("users"),
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
     expiresAt: v.number(),
   })
-    .index("by_dmOrChannelId", ["dmOrChannelId"])
-    .index("by_user_dmOrChannelId", ["user", "dmOrChannelId"]),
+    .index("by_direct_message", ["directMessage"])
+    .index("by_user_direct_message", ["user", "directMessage"]),
 });

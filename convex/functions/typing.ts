@@ -1,22 +1,17 @@
 import { v } from "convex/values";
-import {
-  assertMember,
-  authenticatedMutation,
-  authenticatedQuery,
-} from "./helpers";
+import { authenticatedMutation, authenticatedQuery } from "./helpers";
 import { internalMutation } from "../_generated/server";
 import { internal } from "../_generated/api";
 
 export const list = authenticatedQuery({
   args: {
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
   },
-  handler: async (ctx, { dmOrChannelId }) => {
-    await assertMember(ctx, dmOrChannelId);
+  handler: async (ctx, { directMessage }) => {
     const typingIndicators = await ctx.db
       .query("typingIndicators")
-      .withIndex("by_dmOrChannelId", (q) =>
-        q.eq("dmOrChannelId", dmOrChannelId)
+      .withIndex("by_direct_message", (q) =>
+        q.eq("directMessage", directMessage)
       )
       .filter((q) => q.neq(q.field("user"), ctx.user._id))
       .collect();
@@ -34,14 +29,13 @@ export const list = authenticatedQuery({
 
 export const upsert = authenticatedMutation({
   args: {
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
   },
-  handler: async (ctx, { dmOrChannelId }) => {
-    await assertMember(ctx, dmOrChannelId);
+  handler: async (ctx, { directMessage }) => {
     const existing = await ctx.db
       .query("typingIndicators")
-      .withIndex("by_user_dmOrChannelId", (q) =>
-        q.eq("user", ctx.user._id).eq("dmOrChannelId", dmOrChannelId)
+      .withIndex("by_user_direct_message", (q) =>
+        q.eq("user", ctx.user._id).eq("directMessage", directMessage)
       )
       .unique();
     const expiresAt = Date.now() + 5000;
@@ -50,12 +44,12 @@ export const upsert = authenticatedMutation({
     } else {
       await ctx.db.insert("typingIndicators", {
         user: ctx.user._id,
-        dmOrChannelId,
+        directMessage,
         expiresAt,
       });
     }
     await ctx.scheduler.runAt(expiresAt, internal.functions.typing.remove, {
-      dmOrChannelId,
+      directMessage,
       user: ctx.user._id,
       expiresAt,
     });
@@ -64,15 +58,15 @@ export const upsert = authenticatedMutation({
 
 export const remove = internalMutation({
   args: {
-    dmOrChannelId: v.union(v.id("directMessages"), v.id("channels")),
+    directMessage: v.id("directMessages"),
     user: v.id("users"),
     expiresAt: v.optional(v.number()),
   },
-  handler: async (ctx, { dmOrChannelId, user, expiresAt }) => {
+  handler: async (ctx, { directMessage, user, expiresAt }) => {
     const existing = await ctx.db
       .query("typingIndicators")
-      .withIndex("by_user_dmOrChannelId", (q) =>
-        q.eq("user", user).eq("dmOrChannelId", dmOrChannelId)
+      .withIndex("by_user_direct_message", (q) =>
+        q.eq("user", user).eq("directMessage", directMessage)
       )
       .unique();
     if (existing && (!expiresAt || existing.expiresAt === expiresAt)) {
