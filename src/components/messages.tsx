@@ -1,3 +1,4 @@
+"use client";
 import { useImageUpload } from "@/hooks/use-image-upload";
 import { useMutation, useQuery } from "convex/react";
 import { FunctionReturnType } from "convex/server";
